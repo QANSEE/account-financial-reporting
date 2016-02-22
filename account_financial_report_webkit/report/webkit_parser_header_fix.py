@@ -148,6 +148,7 @@ class HeaderFooterTextWebKitParser(webkit_report.WebKitParser):
             file_to_del.append(html_file.name)
             command.append(html_file.name)
         command.append(out_filename)
+        command = [c.encode('utf-8') for c in command]
         stderr_fd, stderr_path = tempfile.mkstemp(text=True)
         file_to_del.append(stderr_path)
         try:
