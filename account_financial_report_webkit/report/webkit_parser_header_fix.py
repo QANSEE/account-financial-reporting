@@ -262,6 +262,8 @@ class HeaderFooterTextWebKitParser(webkit_report.WebKitParser):
         # wkhtmltopdf
         head = foot = False
 
+        htmls = [html.replace('&#8209;', '-') for html in htmls]  # wkhtml do not render anymore non breaking hyphen
+
         if report_xml.webkit_debug:
             try:
                 deb = body_mako_tpl.render(helper=helper,
