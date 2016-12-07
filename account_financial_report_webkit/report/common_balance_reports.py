@@ -230,8 +230,8 @@ class CommonBalanceReportHeaderWebkit(CommonReportHeaderWebkit):
         return start_period, stop_period, start, stop
 
     def compute_balance_data(self, data, filter_report_type=None):
-        new_ids = data['form']['account_ids'] or data[
-            'form']['chart_account_id']
+        new_ids = (data['form']['account_ids'] or
+                   [data['form']['chart_account_id']])
         max_comparison = self._get_form_param(
             'max_comparison', data, default=0)
         main_filter = self._get_form_param('filter', data, default='filter_no')
@@ -259,10 +259,14 @@ class CommonBalanceReportHeaderWebkit(CommonReportHeaderWebkit):
             start) or False
 
         # Retrieving accounts
+        ctx = {}
+        if data['form'].get('account_level'):
+            # Filter by account level
+            ctx['account_level'] = int(data['form']['account_level'])
         account_ids = self.get_all_accounts(
-            new_ids, only_type=filter_report_type)
+            new_ids, only_type=filter_report_type, context=ctx)
 
-        # get details for each accounts, total of debit / credit / balance
+        # get details for each account, total of debit / credit / balance
         accounts_by_ids = self._get_account_details(
             account_ids, target_move, fiscalyear, main_filter, start, stop,
             initial_balance_mode)
@@ -288,8 +292,6 @@ class CommonBalanceReportHeaderWebkit(CommonReportHeaderWebkit):
         balance_accounts = dict.fromkeys(account_ids, False)
 
         for account in objects:
-            if not account.parent_id:  # hide top level account
-                continue
             if account.type == 'consolidation':
                 to_display_accounts.update(
                     dict([(a.id, False) for a in account.child_consol_ids]))
@@ -312,7 +314,8 @@ class CommonBalanceReportHeaderWebkit(CommonReportHeaderWebkit):
             for comp_account_by_id in comp_accounts_by_ids:
                 values = comp_account_by_id.get(account.id)
                 values.update(
-                    self._get_diff(account.balance, values['balance']))
+                    self._get_diff(balance_accounts[account.id],
+                                   values['balance']))
                 display_account = any((values.get('credit', 0.0),
                                        values.get('debit', 0.0),
                                        values.get('balance', 0.0),

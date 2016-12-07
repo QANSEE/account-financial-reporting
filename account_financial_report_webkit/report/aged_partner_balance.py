@@ -49,9 +49,9 @@ RANGES = make_ranges(120, 30)
 
 def make_ranges_titles():
     """Generates title to be used by mako"""
-    titles = [_('Due')]
+    titles = [_('Not Due')]
     titles += [_(u'Overdue ≤ %s d.') % x[1] for x in RANGES[1:-1]]
-    titles.append(_('Older'))
+    titles.append(_('Overdue > %s d.') % RANGES[-1][0])
     return titles
 
 # list of overdue ranges title
