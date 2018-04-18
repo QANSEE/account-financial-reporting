@@ -23,6 +23,7 @@ _column_sizes = [
     ('counterpart', 30),
     ('debit', 15),
     ('credit', 15),
+    ('bal', 15),
     ('cumul_bal', 15),
     ('curr_bal', 15),
     ('curr_code', 7),
@@ -154,6 +155,8 @@ class GeneralLedgerXls(report_xls):
             ('debit', 1, 0, 'text', _('Debit'), None, c_hdr_cell_style_right),
             ('credit', 1, 0, 'text', _('Credit'),
              None, c_hdr_cell_style_right),
+            ('bal', 1, 0, 'text', _('Filtered Bal.'),
+             None, c_hdr_cell_style_right),
             ('cumul_bal', 1, 0, 'text', _('Cumul. Bal.'),
              None, c_hdr_cell_style_right),
         ]
@@ -221,6 +224,7 @@ class GeneralLedgerXls(report_xls):
                          None, c_init_cell_style_decimal),
                         ('credit', 1, 0, 'number', cumul_credit,
                          None, c_init_cell_style_decimal),
+                        ('bal', 1, 0, 'text', None),
                         ('cumul_bal', 1, 0, 'number', cumul_balance,
                          None, c_init_cell_style_decimal),
                     ]
@@ -273,6 +277,8 @@ class GeneralLedgerXls(report_xls):
                          None, ll_cell_style_decimal),
                         ('credit', 1, 0, 'number', line.get('credit', 0.0),
                          None, ll_cell_style_decimal),
+                        ('bal', 1, 0, 'number', line.get('balance', 0.0),
+                         None, ll_cell_style_decimal),
                         ('cumul_bal', 1, 0, 'number', cumul_balance,
                          None, ll_cell_style_decimal),
                     ]
@@ -296,6 +302,9 @@ class GeneralLedgerXls(report_xls):
                 credit_start = rowcol_to_cell(row_start, 10)
                 credit_end = rowcol_to_cell(row_pos - 1, 10)
                 credit_formula = 'SUM(' + credit_start + ':' + credit_end + ')'
+                bal_start = rowcol_to_cell(row_start, 11)
+                bal_end = rowcol_to_cell(row_pos - 1, 11)
+                bal_formula = 'SUM(' + bal_start + ':' + bal_end + ')'
                 balance_debit = rowcol_to_cell(row_pos, 9)
                 balance_credit = rowcol_to_cell(row_pos, 10)
                 balance_formula = balance_debit + '-' + balance_credit
@@ -309,6 +318,8 @@ class GeneralLedgerXls(report_xls):
                      debit_formula, c_hdr_cell_style_decimal),
                     ('credit', 1, 0, 'number', None,
                      credit_formula, c_hdr_cell_style_decimal),
+                    ('bal', 1, 0, 'number', None,
+                     bal_formula, c_hdr_cell_style_decimal),
                     ('balance', 1, 0, 'number', None,
                      balance_formula, c_hdr_cell_style_decimal),
                 ]
