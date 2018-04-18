@@ -184,6 +184,14 @@ msgid "Cumul. Bal."
 msgstr "Solde Cumul."
 
 #. module: account_financial_report_webkit_xls
+#: code:addons/account_financial_report_webkit_xls/report/general_ledger_xls.py:157
+#: code:addons/account_financial_report_webkit_xls/report/open_invoices_xls.py:215
+#: code:addons/account_financial_report_webkit_xls/report/partner_ledger_xls.py:173
+#, python-format
+msgid "Filtered Bal."
+msgstr "Solde Filtré"
+
+#. module: account_financial_report_webkit_xls
 #: code:addons/account_financial_report_webkit_xls/report/general_ledger_xls.py:306
 #: code:addons/account_financial_report_webkit_xls/report/open_invoices_xls.py:607
 #: code:addons/account_financial_report_webkit_xls/report/open_invoices_xls.py:681
