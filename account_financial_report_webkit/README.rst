@@ -166,6 +166,7 @@ Contributors
 * Guewen Baconnier
 * David Dufresne <david.dufresne@savoirfairelinux.com>
 * Jacques-Etienne Baudoux <je@bcim.be>
+* Luc De Meyer <luc.demeyer@noviat.com>
 
 Maintainer
 ----------
