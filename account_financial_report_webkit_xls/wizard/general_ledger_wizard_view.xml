@@ -18,5 +18,20 @@
       </field>
     </record>
 
+    <!--
+    <record id="report_account_account_report_general_ledger_xls" model="ir.actions.report.xml">
+        <field name="report_type">xlsx</field>
+        <field name="report_name">account.account_report_general_ledger_xls</field>
+        <field eval="[(6,0,[])]" name="groups_id"/>
+        <field eval="0" name="multi"/>
+        <field eval="0" name="auto"/>
+        <field eval="1" name="header"/>
+        <field name="model">account.account</field>
+        <field name="type">ir.actions.report.xml</field>
+        <field name="name">General Ledger XLSX</field>
+    </record>
+    -->
+
+
   </data>
 </openerp>

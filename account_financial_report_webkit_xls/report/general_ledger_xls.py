@@ -3,8 +3,8 @@
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl).
 import xlwt
 from datetime import datetime
-from openerp.addons.report_xls.report_xls import report_xls
-from openerp.addons.report_xls.utils import rowcol_to_cell
+from openerp.addons.report_xlsx.report.report_xlsx import ReportXlsx as report_xls
+#from openerp.addons.report_xlsx.utils import rowcol_to_cell
 from openerp.addons.account_financial_report_webkit.report.general_ledger \
     import GeneralLedgerWebkit
 from openerp.tools.translate import _
@@ -29,13 +29,153 @@ _column_sizes = [
     ('curr_code', 7),
 ]
 
+def cell(row, col, row_abs=False, col_abs=False):
+    """
+    Convert numeric row/col notation to an Excel cell
+    reference string in A1 notation.
+    """
+    d = col // 26
+    m = col % 26
+    chr1 = ""    # Most significant character in AA1
+    if row_abs:
+        row_abs = '$'
+    else:
+        row_abs = ''
+    if col_abs:
+        col_abs = '$'
+    else:
+        col_abs = ''
+    if d > 0:
+        chr1 = chr(ord('A') + d - 1)
+    chr2 = chr(ord('A') + m)
+    # Zero index to 1-index
+    return col_abs + chr1 + chr2 + row_abs + str(row + 1)
 
-class GeneralLedgerXls(report_xls):
+
+class report_xlsx_format:
+    styles = {
+        'xls_title': [('bold', True), ('font_size', 24)],
+        'bold': [('bold', True)],
+        'underline': [('underline', True)],
+        'italic': [('italic', True)],
+        #'fill': 'pattern: pattern solid, fore_color %s;' % _pfc,
+        'fill_green': [('bg_color', '#CCFFCC')],
+        'fill_grey': [('bg_color', '#808080')],
+        'fill_yellow': [('bg_color', '#FFFFCC')],
+        'borders_all': [('border', 1)],
+        'center': [('align', 'center')],
+        'right': [('align', 'right')],
+    }
+
+    def _get_style(self, wb, keys):
+        if not isinstance(keys, (list, tuple)):
+            keys = (keys, )
+        return wb.add_format(dict(reduce(
+            lambda x,y: x+y, [self.styles[k] for k in keys])))
+
+    def xls_row_template(self, specs, wanted_list):
+        """
+        Returns a row template.
+
+        Input :
+        - 'wanted_list': list of Columns that will be returned in the
+                         row_template
+        - 'specs': list with Column Characteristics
+            0: Column Name (from wanted_list)
+            1: Column Colspan
+            2: Column Size (unit = the width of the character ’0′
+                            as it appears in the sheet’s default font)
+            3: Column Type
+            4: Column Data
+            5: Column Formula (or 'None' for Data)
+            6: Column Style
+        """
+        xls_types = {
+            'bool': False,
+            'date': None,
+            'text': '',
+            'number': 0,
+        }
+        r = []
+        col = 0
+        for w in wanted_list:
+            found = False
+            for s in specs:
+                if s[0] == w:
+                    found = True
+                    s_len = len(s)
+                    c = list(s[:5])
+                    # set write_cell_func or formula
+                    if s_len > 5 and s[5] is not None:
+                        c.append({'formula': s[5]})
+                    else:
+                        c.append({
+                            'write_cell_func': xls_types[c[3]]})
+                    # Set custom cell style
+                    if s_len > 6 and s[6] is not None:
+                        c.append(s[6])
+                    else:
+                        c.append(None)
+                    # Set cell formula
+                    if s_len > 7 and s[7] is not None:
+                        c.append(s[7])
+                    else:
+                        c.append(None)
+                    r.append((col, c[1], c))
+                    col += c[1]
+                    break
+            if not found:
+                _logger.warn("report_xls.xls_row_template, "
+                             "column '%s' not found in specs", w)
+        return r
+
+    def xls_write_row(self, ws, row_pos, row_data,
+                      row_style=None, set_column_size=False):
+        r = ws.row(row_pos)
+        for col, size, spec in row_data:
+            data = spec[4]
+            formula = spec[5].get('formula') and \
+                xlwt.Formula(spec[5]['formula']) or None
+            style = spec[6] and spec[6] or row_style
+            if not data:
+                # if no data, use default values
+                data = xls_types_default[spec[3]]
+            if size != 1:
+                if formula:
+                    ws.write_merge(
+                        row_pos, row_pos, col, col + size - 1, data, style)
+                else:
+                    ws.write_merge(
+                        row_pos, row_pos, col, col + size - 1, data, style)
+            else:
+                if formula:
+                    ws.write(row_pos, col, formula, style)
+                else:
+                    spec[5]['write_cell_func'](r, col, data, style)
+            if set_column_size:
+                ws.col(col).width = spec[2] * 256
+        return row_pos + 1
+    def addrow(self, sheet, row, data, cols=0, fmt=None, set_size=False):
+        fmt = fmt or {}
+        for col, val in enumerate(data):
+            sheet.write(row, col, val, fmt)
+        if fmt:
+            while col < cols-1:
+                col += 1
+                sheet.write(row, col, '', fmt)
+
+class AttrDict(dict):
+    def __init__(self, *args, **kwargs):
+        super(AttrDict, self).__init__(*args, **kwargs)
+        self.__dict__ = self
+
+
+class GeneralLedgerXls(report_xls, report_xlsx_format):
     column_sizes = [x[1] for x in _column_sizes]
 
-    def generate_xls_report(self, _p, _xs, data, objects, wb):
-
-        ws = wb.add_sheet(_p.report_name[:31])
+    def generate_xlsx_report(self, wb, data, objects):
+        wb.formats[0].set_font_size(10)
+        ws = wb.add_worksheet(self.title[:31])
         ws.panes_frozen = True
         ws.remove_splits = True
         ws.portrait = 0  # Landscape
@@ -43,8 +183,8 @@ class GeneralLedgerXls(report_xls):
         row_pos = 0
 
         # set print header/footer
-        ws.header_str = self.xls_headers['standard']
-        ws.footer_str = self.xls_footers['standard']
+        #ws.header_str = self.xls_headers['standard']
+        #ws.footer_str = self.xls_footers['standard']
 
         # cf. account_report_general_ledger.mako
         initial_balance_text = {'initial_balance': _('Computed'),
@@ -52,290 +192,165 @@ class GeneralLedgerXls(report_xls):
                                 False: _('No')}
 
         # Title
-        cell_style = xlwt.easyxf(_xs['xls_title'])
+        row_pos = 0
+        cell_style = self._get_style(wb, 'xls_title')
+        _p = AttrDict(self.parser_instance.localcontext)
         report_name = ' - '.join([_p.report_name.upper(),
                                  _p.company.partner_id.name,
                                  _p.company.currency_id.name])
-        c_specs = [
-            ('report_name', 1, 0, 'text', report_name),
-        ]
-        row_data = self.xls_row_template(c_specs, [x[0] for x in c_specs])
-        row_pos = self.xls_write_row(
-            ws, row_pos, row_data, row_style=cell_style)
+        ws.write(row_pos, 0, report_name)
 
-        # write empty row to define column sizes
-        c_sizes = self.column_sizes
-        c_specs = [('empty%s' % i, 1, c_sizes[i], 'text', None)
-                   for i in range(0, len(c_sizes))]
-        row_data = self.xls_row_template(c_specs, [x[0] for x in c_specs])
-        row_pos = self.xls_write_row(
-            ws, row_pos, row_data, set_column_size=True)
+        for i, size in enumerate(self.column_sizes):
+            ws.set_column(i, i, size)
+        row_pos += 2
 
         # Header Table
-        cell_format = _xs['bold'] + _xs['fill_blue'] + _xs['borders_all']
-        cell_style = xlwt.easyxf(cell_format)
-        cell_style_center = xlwt.easyxf(cell_format + _xs['center'])
-        c_specs = [
-            ('coa', 2, 0, 'text', _('Chart of Account')),
-            ('fy', 1, 0, 'text', _('Fiscal Year')),
-            ('df', 3, 0, 'text', _p.filter_form(data) ==
-             'filter_date' and _('Dates Filter') or _('Periods Filter')),
-            ('af', 1, 0, 'text', _('Accounts Filter')),
-            ('tm', 2, 0, 'text', _('Target Moves')),
-            ('ib', 2, 0, 'text', _('Initial Balance')),
+        style_header1 = self._get_style(wb, ('bold', 'fill_green', 'center'))
+        style_header2 = self._get_style(wb, ('center'))
 
-        ]
-        row_data = self.xls_row_template(c_specs, [x[0] for x in c_specs])
-        row_pos = self.xls_write_row(
-            ws, row_pos, row_data, row_style=cell_style_center)
+        ws.merge_range(row_pos, 0, row_pos, 1, _('Chart of Account'), style_header1)
+        ws.merge_range(row_pos+1, 0, row_pos+1, 1, _p.chart_account.name, style_header2)
 
-        cell_format = _xs['borders_all']
-        cell_style = xlwt.easyxf(cell_format)
-        cell_style_center = xlwt.easyxf(cell_format + _xs['center'])
-        c_specs = [
-            ('coa', 2, 0, 'text', _p.chart_account.name),
-            ('fy', 1, 0, 'text', _p.fiscalyear.name if _p.fiscalyear else '-'),
-        ]
-        df = _('From') + ': '
+        ws.write(row_pos, 2, _('Fiscal Year'), style_header1)
+        ws.write(row_pos+1, 2, _p.fiscalyear.name if _p.fiscalyear else '-', style_header2)
+
+        df = _('From') + ': %s ' + _('To') + ': %s'
         if _p.filter_form(data) == 'filter_date':
-            df += _p.start_date if _p.start_date else u''
+            dfh = _('Dates Filter')
+            df = df % (_p.start_date or '', _p.stop_date or '')
         else:
-            df += _p.start_period.name if _p.start_period else u''
-        df += ' ' + _('To') + ': '
-        if _p.filter_form(data) == 'filter_date':
-            df += _p.stop_date if _p.stop_date else u''
-        else:
-            df += _p.stop_period.name if _p.stop_period else u''
-        c_specs += [
-            ('df', 3, 0, 'text', df),
-            ('af', 1, 0, 'text', _p.accounts(data) and ', '.join(
-                [account.code for account in _p.accounts(data)]) or _('All')),
-            ('tm', 2, 0, 'text', _p.display_target_move(data)),
-            ('ib', 2, 0, 'text', initial_balance_text[
-             _p.initial_balance_mode]),
-        ]
-        row_data = self.xls_row_template(c_specs, [x[0] for x in c_specs])
-        row_pos = self.xls_write_row(
-            ws, row_pos, row_data, row_style=cell_style_center)
-        ws.set_horz_split_pos(row_pos)
+            dfh =  _('Periods Filter')
+            df = df % (_p.start_period and _p.start_period.name or '',
+                       _p.stop_period and _p.stop_period.name or '')
+        ws.merge_range(row_pos, 3, row_pos, 5, dfh, style_header1)
+        ws.merge_range(row_pos+1, 3, row_pos+1, 5, df, style_header2)
+
+        ws.write(row_pos, 6, _('Accounts Filter'), style_header1)
+        text = _p.accounts(data) and ', '.join([
+            account.code for account in _p.accounts(data)]) or _('All')
+        ws.write(row_pos+1, 6, text, style_header2)
+
+        ws.write(row_pos, 7, _('Target Moves'), style_header1)
+        ws.write(row_pos+1, 7, _p.display_target_move(data), style_header2)
+
+        ws.merge_range(row_pos, 8, row_pos, 9, _('Initial Balance'), style_header1)
+        text = initial_balance_text[_p.initial_balance_mode]
+        ws.merge_range(row_pos+1, 8, row_pos+1, 9, text, style_header2)
+        row_pos += 1
+
+        ws.freeze_panes(row_pos, 0)
         row_pos += 1
 
         # Column Title Row
-        cell_format = _xs['bold']
-        c_title_cell_style = xlwt.easyxf(cell_format)
+        row_pos += 1
+        c_title_cell_style = self._get_style(wb, ('bold'))
 
         # Column Header Row
-        cell_format = _xs['bold'] + _xs['fill'] + _xs['borders_all']
-        c_hdr_cell_style = xlwt.easyxf(cell_format)
-        c_hdr_cell_style_right = xlwt.easyxf(cell_format + _xs['right'])
-        c_hdr_cell_style_center = xlwt.easyxf(cell_format + _xs['center'])
-        c_hdr_cell_style_decimal = xlwt.easyxf(
-            cell_format + _xs['right'],
-            num_format_str=report_xls.decimal_format)
+        # cell_format = _xs['bold'] + _xs['fill'] + _xs['borders_all']
+        # c_hdr_cell_style = self._get_style(wb, ('bold', 'borders_all'))
+        # c_hdr_cell_style_right = self._get_style(wb, ('bold', 'borders_all', 'right'))
+        # c_hdr_cell_style_center = self._get_style(wb, ('bold', 'borders_all', 'center'))
+        # c_hdr_cell_style_decimal = c_hdr_cell_style_right
 
         # Column Initial Balance Row
-        cell_format = _xs['italic'] + _xs['borders_all']
-        c_init_cell_style = xlwt.easyxf(cell_format)
-        c_init_cell_style_decimal = xlwt.easyxf(
-            cell_format + _xs['right'],
-            num_format_str=report_xls.decimal_format)
+        # c_init_cell_style = self._get_style(wb, ('italic', 'borders_all'))
+        # c_init_cell_style_decimal = c_init_cell_style
 
-        c_specs = [
-            ('date', 1, 0, 'text', _('Date'), None, c_hdr_cell_style),
-            ('period', 1, 0, 'text', _('Period'), None, c_hdr_cell_style),
-            ('move', 1, 0, 'text', _('Entry'), None, c_hdr_cell_style),
-            ('journal', 1, 0, 'text', _('Journal'), None, c_hdr_cell_style),
-            ('account_code', 1, 0, 'text',
-             _('Account'), None, c_hdr_cell_style),
-            ('partner', 1, 0, 'text', _('Partner'), None, c_hdr_cell_style),
-            ('ref', 1, 0, 'text', _('Reference'), None, c_hdr_cell_style),
-            ('label', 1, 0, 'text', _('Label'), None, c_hdr_cell_style),
-            ('counterpart', 1, 0, 'text',
-             _('Counterpart'), None, c_hdr_cell_style),
-            ('debit', 1, 0, 'text', _('Debit'), None, c_hdr_cell_style_right),
-            ('credit', 1, 0, 'text', _('Credit'),
-             None, c_hdr_cell_style_right),
-            ('bal', 1, 0, 'text', _('Filtered Bal.'),
-             None, c_hdr_cell_style_right),
-            ('cumul_bal', 1, 0, 'text', _('Cumul. Bal.'),
-             None, c_hdr_cell_style_right),
-        ]
-        if _p.amount_currency(data):
-            c_specs += [
-                ('curr_bal', 1, 0, 'text', _('Curr. Bal.'),
-                 None, c_hdr_cell_style_right),
-                ('curr_code', 1, 0, 'text', _('Curr.'),
-                 None, c_hdr_cell_style_center),
-            ]
-        c_hdr_data = self.xls_row_template(c_specs, [x[0] for x in c_specs])
+        style_account = self._get_style(wb, ('bold'))
+        style_labels = self._get_style(wb, ('bold', 'fill_yellow'))
+        style_labels_r = self._get_style(wb, ('bold', 'fill_yellow', 'right'))
+        style_initial_balance = self._get_style(wb, ('italic'))
 
+
+        import pdb;pdb.set_trace()
         # cell styles for ledger lines
-        ll_cell_format = _xs['borders_all']
-        ll_cell_style = xlwt.easyxf(ll_cell_format)
-        ll_cell_style_center = xlwt.easyxf(ll_cell_format + _xs['center'])
-        ll_cell_style_date = xlwt.easyxf(
-            ll_cell_format + _xs['left'],
-            num_format_str=report_xls.date_format)
-        ll_cell_style_decimal = xlwt.easyxf(
-            ll_cell_format + _xs['right'],
-            num_format_str=report_xls.decimal_format)
+        for account in _p.objects:
+            # Write account
+            name = ' - '.join([account.code, account.name])
+            ws.write(row_pos, 0, name, style_account)
+            row_pos += 1
 
-        cnt = 0
-        for account in objects:
+            # Write labels
+            ws.write_row(row_pos, 0, [
+                _('Date'), _('Period'), _('Entry'), _('Journal'), _('Account'),
+                _('Partner'), _('Reference'), _('Label'), _('Counterpart')],
+                style_labels)
+            ws.write_row(row_pos, 10, [
+                _('Debit'), _('Credit'), _('Filtered Bal.'), _('Cumul. Bal.')
+                ], style_labels_r)
+            row_pos += 1
 
+            row_start = row_pos
+            cumul_balance = cumul_balance_curr = 0
+
+            # Write initial balance
             display_initial_balance = _p['init_balance'][account.id] and \
                 (_p['init_balance'][account.id].get(
                     'debit', 0.0) != 0.0 or
                     _p['init_balance'][account.id].get('credit', 0.0) != 0.0)
-            display_ledger_lines = _p['ledger_lines'][account.id]
-
-            if _p.display_account_raw(data) == 'all' or \
-                    (display_ledger_lines or display_initial_balance):
-                # TO DO : replace cumul amounts by xls formulas
-                cnt += 1
-                cumul_debit = 0.0
-                cumul_credit = 0.0
-                cumul_balance = 0.0
-                cumul_balance_curr = 0.0
-                c_specs = [
-                    ('acc_title', 11, 0, 'text',
-                     ' - '.join([account.code, account.name])),
-                ]
-                row_data = self.xls_row_template(
-                    c_specs, [x[0] for x in c_specs])
-                row_pos = self.xls_write_row(
-                    ws, row_pos, row_data, c_title_cell_style)
-                row_pos = self.xls_write_row(ws, row_pos, c_hdr_data)
-                row_start = row_pos
-
-                if display_initial_balance:
-                    init_balance = _p['init_balance'][account.id]
-                    cumul_debit = init_balance.get('debit') or 0.0
-                    cumul_credit = init_balance.get('credit') or 0.0
-                    cumul_balance = init_balance.get('init_balance') or 0.0
-                    cumul_balance_curr = init_balance.get(
-                        'init_balance_currency') or 0.0
-                    c_specs = [('empty%s' % x, 1, 0, 'text', None)
-                               for x in range(7)]
-                    c_specs += [
-                        ('init_bal', 1, 0, 'text', _('Initial Balance')),
-                        ('counterpart', 1, 0, 'text', None),
-                        ('debit', 1, 0, 'number', cumul_debit,
-                         None, c_init_cell_style_decimal),
-                        ('credit', 1, 0, 'number', cumul_credit,
-                         None, c_init_cell_style_decimal),
-                        ('bal', 1, 0, 'text', None),
-                        ('cumul_bal', 1, 0, 'number', cumul_balance,
-                         None, c_init_cell_style_decimal),
+            if not display_initial_balance:
+                ws.write(row_pos, 8, _('Initial Balance'), style_initial_balance)
+                init_balance = _p['init_balance'][account.id]
+                cumul_balance += init_balance.get('init_balance') or 0.0
+                cumul_balance_curr += init_balance.get('init_balance_currency') or 0.0
+                row = [
+                    init_balance.get('debit') or 0.0,
+                    init_balance.get('credit') or 0.0,
+                    '',
+                    cumul_balance,
                     ]
-                    if _p.amount_currency(data):
-                        c_specs += [
-                            ('curr_bal', 1, 0, 'number', cumul_balance_curr,
-                             None, c_init_cell_style_decimal),
-                            ('curr_code', 1, 0, 'text', None),
-                        ]
-                    row_data = self.xls_row_template(
-                        c_specs, [x[0] for x in c_specs])
-                    row_pos = self.xls_write_row(
-                        ws, row_pos, row_data, c_init_cell_style)
-
-                for line in _p['ledger_lines'][account.id]:
-
-                    cumul_debit += line.get('debit') or 0.0
-                    cumul_credit += line.get('credit') or 0.0
-                    cumul_balance_curr += line.get('amount_currency') or 0.0
-                    cumul_balance += line.get('balance') or 0.0
-                    label_elements = [line.get('lname') or '']
-                    if line.get('invoice_number'):
-                        label_elements.append(
-                            "(%s)" % (line['invoice_number'],))
-                    label = ' '.join(label_elements)
-
-                    if line.get('ldate'):
-                        c_specs = [
-                            ('ldate', 1, 0, 'date', datetime.strptime(
-                                line['ldate'], '%Y-%m-%d'), None,
-                             ll_cell_style_date),
-                        ]
-                    else:
-                        c_specs = [
-                            ('ldate', 1, 0, 'text', None),
-                        ]
-                    c_specs += [
-                        ('period', 1, 0, 'text',
-                         line.get('period_code') or ''),
-                        ('move', 1, 0, 'text', line.get('move_name') or ''),
-                        ('journal', 1, 0, 'text', line.get('jcode') or ''),
-                        ('account_code', 1, 0, 'text', account.code),
-                        ('partner', 1, 0, 'text',
-                         line.get('partner_name') or ''),
-                        ('ref', 1, 0, 'text', line.get('lref')),
-                        ('label', 1, 0, 'text', label),
-                        ('counterpart', 1, 0, 'text',
-                         line.get('counterparts') or ''),
-                        ('debit', 1, 0, 'number', line.get('debit', 0.0),
-                         None, ll_cell_style_decimal),
-                        ('credit', 1, 0, 'number', line.get('credit', 0.0),
-                         None, ll_cell_style_decimal),
-                        ('bal', 1, 0, 'number', line.get('balance', 0.0),
-                         None, ll_cell_style_decimal),
-                        ('cumul_bal', 1, 0, 'number', cumul_balance,
-                         None, ll_cell_style_decimal),
-                    ]
-                    if _p.amount_currency(data):
-                        c_specs += [
-                            ('curr_bal', 1, 0, 'number', line.get(
-                                'amount_currency') or 0.0, None,
-                             ll_cell_style_decimal),
-                            ('curr_code', 1, 0, 'text', line.get(
-                                'currency_code') or '', None,
-                             ll_cell_style_center),
-                        ]
-                    row_data = self.xls_row_template(
-                        c_specs, [x[0] for x in c_specs])
-                    row_pos = self.xls_write_row(
-                        ws, row_pos, row_data, ll_cell_style)
-
-                debit_start = rowcol_to_cell(row_start, 9)
-                debit_end = rowcol_to_cell(row_pos - 1, 9)
-                debit_formula = 'SUM(' + debit_start + ':' + debit_end + ')'
-                credit_start = rowcol_to_cell(row_start, 10)
-                credit_end = rowcol_to_cell(row_pos - 1, 10)
-                credit_formula = 'SUM(' + credit_start + ':' + credit_end + ')'
-                bal_start = rowcol_to_cell(row_start, 11)
-                bal_end = rowcol_to_cell(row_pos - 1, 11)
-                bal_formula = 'SUM(' + bal_start + ':' + bal_end + ')'
-                balance_debit = rowcol_to_cell(row_pos, 9)
-                balance_credit = rowcol_to_cell(row_pos, 10)
-                balance_formula = balance_debit + '-' + balance_credit
-                c_specs = [
-                    ('acc_title', 8, 0, 'text',
-                     ' - '.join([account.code, account.name])),
-                    ('cum_bal', 1, 0, 'text',
-                     _('Cumulated Balance on Account'),
-                     None, c_hdr_cell_style_right),
-                    ('debit', 1, 0, 'number', None,
-                     debit_formula, c_hdr_cell_style_decimal),
-                    ('credit', 1, 0, 'number', None,
-                     credit_formula, c_hdr_cell_style_decimal),
-                    ('bal', 1, 0, 'number', None,
-                     bal_formula, c_hdr_cell_style_decimal),
-                    ('balance', 1, 0, 'number', None,
-                     balance_formula, c_hdr_cell_style_decimal),
-                ]
                 if _p.amount_currency(data):
-                    if account.currency_id:
-                        c_specs += [('curr_bal', 1, 0, 'number',
-                                     cumul_balance_curr, None,
-                                     c_hdr_cell_style_decimal)]
-                    else:
-                        c_specs += [('curr_bal', 1, 0, 'text', None)]
-                    c_specs += [('curr_code', 1, 0, 'text', None)]
-                row_data = self.xls_row_template(
-                    c_specs, [x[0] for x in c_specs])
-                row_pos = self.xls_write_row(
-                    ws, row_pos, row_data, c_hdr_cell_style)
+                    row.append(cumul_balance_curr)
+                ws.write_row(row_pos, 10, row, style_initial_balance)
                 row_pos += 1
+
+            # Write lines
+            for line in _p['ledger_lines'][account.id]:
+                label_elements = [line.get('lname') or '']
+                if line.get('invoice_number'):
+                    label_elements.append(
+                        "(%s)" % (line['invoice_number'],))
+                label = ' '.join(label_elements)
+                cumul_balance += line.get('balance') or 0.0
+                row = [
+                    line['ldate'] and datetime.strptime(line['ldate'], '%Y-%m-%d') or '',
+                    line.get('period_code') or '',
+                    line.get('move_name') or '',
+                    line.get('jcode') or '',
+                    account.code,
+                    line.get('partner_name') or '',
+                    line.get('lref'),
+                    label,
+                    line.get('counterparts') or '',
+                    line.get('debit', 0.0),
+                    line.get('credit', 0.0),
+                    line.get('balance', 0.0),
+                    cumul_balance,
+                    ]
+                if _p.amount_currency(data):
+                    cumul_balance_curr += line.get('amount_currency') or 0.0
+                    row += [
+                        line.get('amount_currency') or 0.0,
+                        line.get('currency_code') or '',
+                    ]
+                ws.write_row(row_pos, 0, row)
+                row_pos += 1
+
+            # Write Sums
+            row = [
+                _('Cumulated Balance on Account'),
+                '=SUM(%s:%s)' % (cell(row_start, 9), cell(row_pos-1, 9)),
+                '=SUM(%s:%s)' % (cell(row_start, 10), cell(row_pos-1, 10)),
+                '=SUM(%s:%s)' % (cell(row_start, 11), cell(row_pos-1, 11)),
+                '=%s-%s' % (cell(row_pos, 9), cell(row_pos, 10)),
+                ]
+            if _p.amount_currency(data):
+                row += [
+                    cumul_balance_curr,
+                    line.get('currency_code') or '',
+                ]
+            ws.write_row(row_pos, 9, row)
+            row_pos += 2
 
 
 GeneralLedgerXls('report.account.account_report_general_ledger_xls',

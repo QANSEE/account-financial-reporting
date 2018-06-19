@@ -7,7 +7,7 @@
     'license': 'AGPL-3',
     'author': "Noviat,Odoo Community Association (OCA)",
     'category': 'Generic Modules/Accounting',
-    'depends': ['report_xls', 'account_financial_report_webkit'],
+    'depends': ['report_xls', 'report_xlsx', 'account_financial_report_webkit'],
     'demo': [],
     'data': [
         'wizard/general_ledger_wizard_view.xml',
